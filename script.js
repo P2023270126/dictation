@@ -1,39 +1,9 @@
-const STORAGE_KEY = "dictationPracticeArticlesV1";
-const SHEET_SOURCES_KEY = "dictationPracticeSheetSourcesV1";
-
-const SAMPLE_ARTICLES = [
-  {
-    id: "sample-zh",
-    title: "示例：中文短文",
-    text: "今天陽光很好，爸爸帶我到公園散步。\n我看見一隻小狗，牠正在草地上跑來跑去。\n媽媽說：「我們要準時回家。」",
-    lineBreakMode: true
-  },
-  {
-    id: "sample-en",
-    title: "Sample: English Passage",
-    text: "Today is a sunny day.\nBen goes to the park with his father.\nHe says, \"I like reading books.\"",
-    lineBreakMode: true
-  }
-];
+const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfmlTFpkVroBCn-XVabMyXFPb-TDwvpqmHGH6hJc1NmN7t8CwtXpVeGnm2DfF36hzzYGDC0Wja0iAC/pub?output=csv";
 
 const elements = {
   articleSelect: document.getElementById("articleSelect"),
-  deleteArticleSelect: document.getElementById("deleteArticleSelect"),
-  articleTitle: document.getElementById("articleTitle"),
-  articleText: document.getElementById("articleText"),
-  lineBreakMode: document.getElementById("lineBreakMode"),
-  sheetName: document.getElementById("sheetName"),
-  sheetUrl: document.getElementById("sheetUrl"),
-  sheetSourceSelect: document.getElementById("sheetSourceSelect"),
-  sheetStatus: document.getElementById("sheetStatus"),
-  saveArticleBtn: document.getElementById("saveArticleBtn"),
-  deleteArticleBtn: document.getElementById("deleteArticleBtn"),
-  saveSheetSourceBtn: document.getElementById("saveSheetSourceBtn"),
-  loadSheetBtn: document.getElementById("loadSheetBtn"),
-  loadSelectedSheetBtn: document.getElementById("loadSelectedSheetBtn"),
-  deleteSheetSourceBtn: document.getElementById("deleteSheetSourceBtn"),
+  libraryStatus: document.getElementById("libraryStatus"),
   startBtn: document.getElementById("startBtn"),
-  parentSetup: document.getElementById("parentSetup"),
   languageMode: document.getElementById("languageMode"),
   statusText: document.getElementById("statusText"),
   currentSentence: document.getElementById("currentSentence"),
@@ -49,8 +19,6 @@ const elements = {
 };
 
 let articles = [];
-let sheetSources = [];
-let sheetArticles = [];
 let segments = [];
 let currentIndex = 0;
 let isSpeaking = false;
@@ -58,210 +26,6 @@ let activeTimer = null;
 let activeDelayResolve = null;
 let playbackToken = 0;
 let voices = [];
-
-function loadArticles() {
-  const savedText = localStorage.getItem(STORAGE_KEY);
-  if (savedText === null) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(SAMPLE_ARTICLES));
-    return [...SAMPLE_ARTICLES];
-  }
-  return JSON.parse(savedText);
-}
-
-function saveArticles() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(articles));
-}
-
-function loadSheetSources() {
-  return JSON.parse(localStorage.getItem(SHEET_SOURCES_KEY) || "[]");
-}
-
-function saveSheetSources() {
-  localStorage.setItem(SHEET_SOURCES_KEY, JSON.stringify(sheetSources));
-}
-
-function getAllPracticeArticles() {
-  return [
-    ...articles.map((article) => ({ ...article, sourceType: "local" })),
-    ...sheetArticles.map((article) => ({ ...article, sourceType: "sheet" }))
-  ];
-}
-
-function getSelectedArticle() {
-  return getAllPracticeArticles().find((article) => article.id === elements.articleSelect.value);
-}
-
-function renderArticleOptions() {
-  elements.articleSelect.innerHTML = "";
-  elements.deleteArticleSelect.innerHTML = "";
-
-  if (articles.length > 0) {
-    const localGroup = document.createElement("optgroup");
-    localGroup.label = "本機文章";
-
-    articles.forEach((article) => {
-      const option = document.createElement("option");
-      option.value = article.id;
-      option.textContent = article.title;
-      localGroup.appendChild(option);
-
-      const deleteOption = document.createElement("option");
-      deleteOption.value = article.id;
-      deleteOption.textContent = article.title;
-      elements.deleteArticleSelect.appendChild(deleteOption);
-    });
-
-    elements.articleSelect.appendChild(localGroup);
-  }
-
-  if (sheetArticles.length > 0) {
-    const sheetGroup = document.createElement("optgroup");
-    sheetGroup.label = "Google Sheet 文章";
-
-    sheetArticles.forEach((article) => {
-      const option = document.createElement("option");
-      option.value = article.id;
-      option.textContent = article.title;
-      sheetGroup.appendChild(option);
-    });
-
-    elements.articleSelect.appendChild(sheetGroup);
-  }
-
-  const firstArticle = getAllPracticeArticles()[0];
-  if (firstArticle) {
-    elements.articleSelect.value = firstArticle.id;
-    if (articles.length > 0) {
-      elements.deleteArticleSelect.value = articles[0].id;
-    }
-    loadSelectedArticle();
-  } else {
-    elements.articleSelect.innerHTML = '<option value="">未有已儲存文章</option>';
-    resetPractice();
-    updateStatus("未有已儲存文章。請在家長設定區新增文章，或讀取 Google Sheet。");
-  }
-
-  if (articles.length > 0) {
-    elements.deleteArticleSelect.value = articles[0].id;
-  } else {
-    elements.deleteArticleSelect.innerHTML = '<option value="">未有可刪除文章</option>';
-  }
-}
-
-function loadSelectedArticle() {
-  const selected = getSelectedArticle();
-  if (!selected) return;
-
-  resetPractice();
-  const sourceLabel = selected.sourceType === "sheet" ? "Google Sheet" : "本機";
-  updateStatus(`已選擇「${selected.title}」（${sourceLabel}）。文章內容已隱藏，請按「開始默書」。`);
-}
-
-function saveCurrentArticle() {
-  const title = elements.articleTitle.value.trim();
-  const text = elements.articleText.value.trim();
-  const lineBreakMode = elements.lineBreakMode.checked;
-
-  if (!title || !text) {
-    updateStatus("請先輸入文章名稱和內容。");
-    return;
-  }
-
-  const titleMatchIndex = articles.findIndex((article) => article.title === title);
-
-  if (titleMatchIndex >= 0) {
-    updateStatus("已有同名文章。請先刪除舊文章，或者使用另一個文章名稱。");
-    return;
-  }
-
-  articles.push({
-    id: `article-${Date.now()}`,
-    title,
-    text,
-    lineBreakMode
-  });
-
-  saveArticles();
-  renderArticleOptions();
-
-  const saved = articles.find((article) => article.title === title);
-  if (saved) {
-    elements.articleSelect.value = saved.id;
-    elements.deleteArticleSelect.value = saved.id;
-  }
-
-  elements.articleTitle.value = "";
-  elements.articleText.value = "";
-  elements.lineBreakMode.checked = true;
-  elements.parentSetup.open = false;
-  loadSelectedArticle();
-  updateStatus("文章已儲存，內容已隱藏。可以按「開始默書」。");
-}
-
-function deleteSelectedArticle() {
-  const selected = articles.find((article) => article.id === elements.deleteArticleSelect.value);
-  if (!selected) {
-    updateStatus("未有可刪除的文章。");
-    return;
-  }
-
-  const ok = window.confirm(`確定刪除「${selected.title}」？刪除後如要修改，需要重新新增文章。`);
-  if (!ok) return;
-
-  stopSpeech();
-  articles = articles.filter((article) => article.id !== selected.id);
-  saveArticles();
-  elements.articleTitle.value = "";
-  elements.articleText.value = "";
-  elements.lineBreakMode.checked = true;
-  renderArticleOptions();
-  updateStatus(`已刪除「${selected.title}」。`);
-}
-
-function renderSheetSourceOptions() {
-  elements.sheetSourceSelect.innerHTML = "";
-
-  if (sheetSources.length === 0) {
-    elements.sheetSourceSelect.innerHTML = '<option value="">未有已儲存來源</option>';
-    return;
-  }
-
-  sheetSources.forEach((source) => {
-    const option = document.createElement("option");
-    option.value = source.id;
-    option.textContent = source.name;
-    elements.sheetSourceSelect.appendChild(option);
-  });
-}
-
-function saveCurrentSheetSource() {
-  const name = elements.sheetName.value.trim();
-  const url = elements.sheetUrl.value.trim();
-
-  if (!name || !url) {
-    elements.sheetStatus.textContent = "請輸入來源名稱和 Google Sheet CSV 連結。";
-    return null;
-  }
-
-  const existingIndex = sheetSources.findIndex((source) => source.name === name);
-  const source = {
-    id: existingIndex >= 0 ? sheetSources[existingIndex].id : `sheet-source-${Date.now()}`,
-    name,
-    url
-  };
-
-  if (existingIndex >= 0) {
-    sheetSources[existingIndex] = source;
-  } else {
-    sheetSources.push(source);
-  }
-
-  saveSheetSources();
-  renderSheetSourceOptions();
-  elements.sheetSourceSelect.value = source.id;
-  elements.sheetStatus.textContent = `已儲存來源「${name}」。`;
-  return source;
-}
 
 function parseCsv(csvText) {
   const rows = [];
@@ -314,7 +78,7 @@ function parseBoolean(value, defaultValue = true) {
   return /^(true|yes|y|1|是|開|on)$/i.test(value.trim());
 }
 
-function articlesFromCsv(csvText, source) {
+function articlesFromCsv(csvText) {
   const rows = parseCsv(csvText);
   if (rows.length < 2) return [];
 
@@ -335,85 +99,76 @@ function articlesFromCsv(csvText, source) {
     if (!title || !text) return;
 
     result.push({
-      id: `sheet:${source.id}:${index}`,
-      title: `${source.name}：${title}`,
+      id: `sheet-article-${index}`,
+      title,
       text,
       language,
-      lineBreakMode,
-      sourceName: source.name
+      lineBreakMode
     });
   });
 
   return result;
 }
 
-async function loadSheetSource(source) {
-  if (!source?.url) {
-    elements.sheetStatus.textContent = "請先選擇或儲存一個 Google Sheet 來源。";
-    return;
-  }
-
-  elements.sheetStatus.textContent = `正在讀取「${source.name}」...`;
+async function loadArticleLibrary() {
+  elements.articleSelect.innerHTML = '<option value="">正在讀取文章庫...</option>';
+  elements.libraryStatus.textContent = "正在同步 Google Sheet 最新文章庫...";
+  elements.statusText.textContent = "正在讀取 Google Sheet 文章庫...";
+  setButtonStates();
 
   try {
-    const response = await fetch(source.url, { cache: "no-store" });
+    const response = await fetch(GOOGLE_SHEET_CSV_URL, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
     const csvText = await response.text();
-    const loadedArticles = articlesFromCsv(csvText, source);
-
-    sheetArticles = [
-      ...sheetArticles.filter((article) => article.sourceName !== source.name),
-      ...loadedArticles
-    ];
-
+    articles = articlesFromCsv(csvText);
     renderArticleOptions();
-    if (loadedArticles.length > 0) {
-      elements.articleSelect.value = loadedArticles[0].id;
-      loadSelectedArticle();
+
+    if (articles.length > 0) {
+      elements.libraryStatus.textContent = `已同步 Google Sheet：${articles.length} 篇文章。`;
+      elements.statusText.textContent = "請選擇文章，然後按「開始默書」。";
+    } else {
+      elements.libraryStatus.textContent = "Google Sheet 暫時未有可用文章。請確認欄位為 Title、Language、LineBreakMode、Passage。";
+      elements.statusText.textContent = "未有可用文章。";
     }
-    elements.sheetStatus.textContent = `已讀取「${source.name}」：${loadedArticles.length} 篇文章。`;
-    updateStatus(`Google Sheet 已同步：${loadedArticles.length} 篇文章可選。`);
   } catch (error) {
-    elements.sheetStatus.textContent = "讀取失敗。請確認 Google Sheet 已 Publish to web，並使用 CSV 連結。";
+    articles = [];
+    renderArticleOptions();
+    elements.libraryStatus.textContent = "讀取 Google Sheet 失敗。請確認 Published CSV link 仍然有效。";
+    elements.statusText.textContent = "文章庫讀取失敗。";
   }
 }
 
-function saveAndLoadCurrentSheetSource() {
-  const source = saveCurrentSheetSource();
-  if (source) loadSheetSource(source);
-}
+function renderArticleOptions() {
+  elements.articleSelect.innerHTML = "";
 
-function loadSelectedSheetSource() {
-  const source = sheetSources.find((item) => item.id === elements.sheetSourceSelect.value);
-  if (!source) {
-    elements.sheetStatus.textContent = "未有選中的 Google Sheet 來源。";
+  if (articles.length === 0) {
+    elements.articleSelect.innerHTML = '<option value="">未有可用文章</option>';
+    resetPractice();
     return;
   }
 
-  elements.sheetName.value = source.name;
-  elements.sheetUrl.value = source.url;
-  loadSheetSource(source);
+  articles.forEach((article) => {
+    const option = document.createElement("option");
+    option.value = article.id;
+    option.textContent = article.title;
+    elements.articleSelect.appendChild(option);
+  });
+
+  elements.articleSelect.value = articles[0].id;
+  loadSelectedArticle();
 }
 
-function deleteSelectedSheetSource() {
-  const source = sheetSources.find((item) => item.id === elements.sheetSourceSelect.value);
-  if (!source) {
-    elements.sheetStatus.textContent = "未有可刪除的 Google Sheet 來源。";
-    return;
-  }
+function getSelectedArticle() {
+  return articles.find((article) => article.id === elements.articleSelect.value);
+}
 
-  const ok = window.confirm(`確定刪除 Google Sheet 來源「${source.name}」？這只會刪除來源設定，不會刪除 Google Sheet 本身。`);
-  if (!ok) return;
+function loadSelectedArticle() {
+  const selected = getSelectedArticle();
+  if (!selected) return;
 
-  sheetSources = sheetSources.filter((item) => item.id !== source.id);
-  sheetArticles = sheetArticles.filter((article) => article.sourceName !== source.name);
-  saveSheetSources();
-  renderSheetSourceOptions();
-  renderArticleOptions();
-  elements.sheetName.value = "";
-  elements.sheetUrl.value = "";
-  elements.sheetStatus.textContent = `已刪除來源「${source.name}」。`;
+  resetPractice();
+  elements.statusText.textContent = `已選擇「${selected.title}」。文章內容已隱藏，請按「開始默書」。`;
 }
 
 function splitLineByPunctuation(line) {
@@ -444,19 +199,14 @@ function detectLanguage(text) {
   return chineseChars >= englishChars ? "zh" : "en";
 }
 
-function getSelectedLanguage(text = "") {
-  const mode = elements.languageMode.value;
-  return mode === "auto" ? detectLanguage(text) : mode;
-}
-
 function getPracticeLanguage(text = "") {
   const mode = elements.languageMode.value;
   if (mode !== "auto") return mode;
 
   const selected = getSelectedArticle();
   const language = selected?.language?.toLowerCase?.().trim();
-  if (language === "zh" || language === "chinese" || language === "cantonese" || language === "yue") return "zh";
-  if (language === "en" || language === "english") return "en";
+  if (["zh", "chinese", "cantonese", "yue"].includes(language)) return "zh";
+  if (["en", "english"].includes(language)) return "en";
 
   return detectLanguage(text);
 }
@@ -540,7 +290,7 @@ function chooseVoice(lang) {
 }
 
 function speakText(text, options = {}) {
-  const lang = options.lang || getSelectedLanguage(text);
+  const lang = options.lang || getPracticeLanguage(text);
   const utterance = new SpeechSynthesisUtterance(text);
   const chosenVoice = chooseVoice(lang);
 
@@ -594,16 +344,11 @@ function waitWithCancel(ms, token) {
   });
 }
 
-function updateStatus(message) {
-  elements.statusText.textContent = message;
-}
-
 function updatePracticeDisplay() {
   const total = segments.length;
   const current = total ? currentIndex + 1 : 0;
   const percent = total ? (current / total) * 100 : 0;
 
-  elements.currentSentence.textContent = total ? segments[currentIndex] : "尚未開始";
   elements.currentSentence.textContent = total
     ? `第 ${current} 段內容已隱藏，請細心聽。`
     : "內容已隱藏，請用耳仔聽。";
@@ -613,12 +358,13 @@ function updatePracticeDisplay() {
 }
 
 function setButtonStates() {
+  const hasArticles = articles.length > 0;
   const hasSegments = segments.length > 0;
   elements.prevBtn.disabled = !hasSegments || currentIndex <= 0 || isSpeaking;
   elements.replayBtn.disabled = !hasSegments || isSpeaking;
   elements.nextBtn.disabled = !hasSegments || isSpeaking;
   elements.readAllBtn.disabled = !hasSegments || isSpeaking;
-  elements.startBtn.disabled = isSpeaking;
+  elements.startBtn.disabled = !hasArticles || isSpeaking;
 }
 
 function resetPractice() {
@@ -632,9 +378,9 @@ function resetPractice() {
 
 function preparePractice() {
   const selected = getSelectedArticle();
-  const text = selected?.text?.trim() || elements.articleText.value.trim();
+  const text = selected?.text?.trim();
   if (!text) {
-    updateStatus("請先在家長設定區新增並儲存一篇文章。");
+    elements.statusText.textContent = "未有可用文章。請檢查 Google Sheet。";
     return false;
   }
 
@@ -645,7 +391,7 @@ function preparePractice() {
   elements.completeMessage.hidden = true;
   elements.repeatText.textContent = "準備播放";
   updatePracticeDisplay();
-  updateStatus(`已準備好：共 ${segments.length} 段。文章內容會保持隱藏。`);
+  elements.statusText.textContent = `已準備好：共 ${segments.length} 段。文章內容會保持隱藏。`;
   return true;
 }
 
@@ -676,10 +422,10 @@ async function playCurrentSentenceThreeTimes() {
     }
 
     elements.repeatText.textContent = "請按「下一句」";
-    updateStatus("這一段已讀三次。");
+    elements.statusText.textContent = "這一段已讀三次。";
   } catch (error) {
     if (token === playbackToken) {
-      updateStatus("朗讀被停止，或瀏覽器暫時未能播放聲音。");
+      elements.statusText.textContent = "朗讀被停止，或瀏覽器暫時未能播放聲音。";
     }
   } finally {
     if (token === playbackToken) {
@@ -708,7 +454,7 @@ async function replayCurrentSentenceOnce() {
     elements.repeatText.textContent = "重讀完成";
   } catch (error) {
     if (token === playbackToken) {
-      updateStatus("朗讀被停止，或瀏覽器暫時未能播放聲音。");
+      elements.statusText.textContent = "朗讀被停止，或瀏覽器暫時未能播放聲音。";
     }
   } finally {
     if (token === playbackToken) {
@@ -726,7 +472,7 @@ async function readWholeArticleOnce() {
   isSpeaking = true;
   setButtonStates();
   elements.completeMessage.hidden = true;
-  updateStatus("正在重讀全文。");
+  elements.statusText.textContent = "正在重讀全文。";
 
   try {
     for (let index = 0; index < segments.length; index += 1) {
@@ -742,10 +488,10 @@ async function readWholeArticleOnce() {
     }
 
     elements.repeatText.textContent = "全文朗讀完成";
-    updateStatus("全文已讀完一次。");
+    elements.statusText.textContent = "全文已讀完一次。";
   } catch (error) {
     if (token === playbackToken) {
-      updateStatus("全文朗讀已停止。");
+      elements.statusText.textContent = "全文朗讀已停止。";
     }
   } finally {
     if (token === playbackToken) {
@@ -761,7 +507,7 @@ function goToNextSentence() {
   if (currentIndex >= segments.length - 1) {
     elements.completeMessage.hidden = false;
     elements.repeatText.textContent = "已完成";
-    updateStatus("太好了！整篇默書已完成。");
+    elements.statusText.textContent = "太好了！整篇默書已完成。";
     updatePracticeDisplay();
     return;
   }
@@ -785,7 +531,7 @@ function startPractice() {
 
 function init() {
   if (!("speechSynthesis" in window)) {
-    updateStatus("你的瀏覽器暫時不支援朗讀功能。請試 Chrome、Edge 或 Safari。");
+    elements.statusText.textContent = "你的瀏覽器暫時不支援朗讀功能。請試 Chrome、Edge 或 Safari。";
   }
 
   refreshVoices();
@@ -793,24 +539,7 @@ function init() {
     window.speechSynthesis.onvoiceschanged = refreshVoices;
   }
 
-  articles = loadArticles();
-  sheetSources = loadSheetSources();
-  renderArticleOptions();
-  renderSheetSourceOptions();
-
   elements.articleSelect.addEventListener("change", loadSelectedArticle);
-  elements.saveArticleBtn.addEventListener("click", saveCurrentArticle);
-  elements.deleteArticleBtn.addEventListener("click", deleteSelectedArticle);
-  elements.saveSheetSourceBtn.addEventListener("click", saveCurrentSheetSource);
-  elements.loadSheetBtn.addEventListener("click", saveAndLoadCurrentSheetSource);
-  elements.loadSelectedSheetBtn.addEventListener("click", loadSelectedSheetSource);
-  elements.deleteSheetSourceBtn.addEventListener("click", deleteSelectedSheetSource);
-  elements.sheetSourceSelect.addEventListener("change", () => {
-    const source = sheetSources.find((item) => item.id === elements.sheetSourceSelect.value);
-    if (!source) return;
-    elements.sheetName.value = source.name;
-    elements.sheetUrl.value = source.url;
-  });
   elements.startBtn.addEventListener("click", startPractice);
   elements.prevBtn.addEventListener("click", goToPreviousSentence);
   elements.replayBtn.addEventListener("click", replayCurrentSentenceOnce);
@@ -818,11 +547,11 @@ function init() {
   elements.readAllBtn.addEventListener("click", readWholeArticleOnce);
   elements.stopBtn.addEventListener("click", stopSpeech);
   elements.languageMode.addEventListener("change", () => {
-    updateStatus("朗讀語言設定已更新。");
+    elements.statusText.textContent = "朗讀語言設定已更新。";
   });
 
   resetPractice();
-  updateStatus("你可以先用示例文章測試，或貼上自己的默書文章。");
+  loadArticleLibrary();
 }
 
 init();

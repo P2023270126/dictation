@@ -11,92 +11,14 @@
     <section class="hero">
       <p class="eyebrow">Dictation Practice</p>
       <h1>默書練習小助手</h1>
-      <p class="subtitle">貼上中文或英文課文，系統會逐段慢速讀三次，連標點都讀出。</p>
+      <p class="subtitle">從 Google Sheet 自動讀取最新默書文章，逐段慢速讀三次，連標點都讀出。</p>
     </section>
-
-    <details id="parentSetup" class="card setup-card">
-      <summary>家長設定 / 新增文章</summary>
-      <div class="section-heading">
-        <div>
-          <h2 id="article-setup-title">文章設定</h2>
-          <p>這一區只給家長使用。儲存後，文章內容會在練習畫面隱藏。</p>
-        </div>
-      </div>
-
-      <label for="articleTitle">文章名稱</label>
-      <input id="articleTitle" type="text" placeholder="例如：中文默書第 3 課" />
-
-      <label for="articleText">默書文章</label>
-      <textarea id="articleText" rows="8" placeholder="在這裡貼上默書文章。中文或英文都可以。"></textarea>
-
-      <label class="checkbox-label" for="lineBreakMode">
-        <input id="lineBreakMode" type="checkbox" checked />
-        Enter 換行 = 新一段朗讀
-      </label>
-
-      <div class="button-row">
-        <button id="saveArticleBtn" class="primary-btn">儲存新文章</button>
-      </div>
-    </details>
-
-    <details id="deleteSetup" class="card delete-card">
-      <summary>管理舊文章 / 刪除文章</summary>
-      <div class="section-heading">
-        <div>
-          <h2>刪除舊文章</h2>
-          <p>如果想修改文章，建議先刪除舊文章，再新增一篇新文章。</p>
-        </div>
-      </div>
-
-      <label for="deleteArticleSelect">選擇要刪除的文章</label>
-      <select id="deleteArticleSelect"></select>
-
-      <div class="button-row single-action">
-        <button id="deleteArticleBtn" class="danger-btn">刪除選中文章</button>
-      </div>
-    </details>
-
-    <details id="sheetSetup" class="card sheet-card">
-      <summary>Google Sheet 文章來源</summary>
-      <div class="section-heading">
-        <div>
-          <h2>同步 Google Sheet 文章</h2>
-          <p>貼上 Google Sheet 發佈成 CSV 的連結；所有裝置都可以讀同一批文章。</p>
-        </div>
-      </div>
-
-      <div class="sheet-format">
-        <p>Google Sheet 第一行請用這些欄位：</p>
-        <code>Title | Language | LineBreakMode | Passage</code>
-      </div>
-
-      <label for="sheetName">來源名稱</label>
-      <input id="sheetName" type="text" placeholder="例如：Peter 默書文章庫" />
-
-      <label for="sheetUrl">Google Sheet CSV 連結</label>
-      <input id="sheetUrl" type="url" placeholder="貼上 published CSV URL" />
-
-      <div class="button-row">
-        <button id="saveSheetSourceBtn" class="primary-btn">儲存 / 更新來源</button>
-        <button id="loadSheetBtn" class="secondary-btn">讀取 Google Sheet</button>
-      </div>
-
-      <label for="sheetSourceSelect">已儲存 Google Sheet 來源</label>
-      <select id="sheetSourceSelect"></select>
-
-      <div class="button-row">
-        <button id="loadSelectedSheetBtn" class="secondary-btn">讀取選中來源</button>
-        <button id="deleteSheetSourceBtn" class="danger-btn">刪除來源</button>
-      </div>
-
-      <p id="sheetStatus" class="small-status">尚未讀取 Google Sheet。</p>
-    </details>
 
     <section class="card practice-card" aria-labelledby="practice-title">
       <div class="section-heading">
         <div>
           <h2 id="practice-title">默書播放</h2>
-          <p id="statusText">請先選擇或儲存一篇文章。</p>
+          <p id="statusText">正在讀取 Google Sheet 文章庫...</p>
         </div>
 
         <div class="language-control">
@@ -111,6 +33,7 @@
 
       <label for="articleSelect">選擇文章</label>
       <select id="articleSelect"></select>
+      <p id="libraryStatus" class="small-status">文章庫會在頁面開啟時自動同步。</p>
 
       <div class="sentence-panel">
         <p class="sentence-label">小朋友練習畫面</p>
@@ -142,8 +65,8 @@
     </section>
 
     <section class="note">
-      <h2>v6 說明</h2>
-      <p>練習畫面會隱藏文章內容，只保留文章題目、進度和控制按鈕。每段預設讀三次。文章可以來自本機儲存，亦可以來自 Google Sheet CSV。朗讀功能使用瀏覽器內置 TTS，第一次播放需要你按一下按鈕。</p>
+      <h2>v7 說明</h2>
+      <p>文章庫固定由指定 Google Sheet 自動讀取。練習畫面會隱藏文章內容，只保留文章題目、進度和控制按鈕。每段預設讀三次。朗讀功能使用瀏覽器內置 TTS，第一次播放需要你按一下按鈕。</p>
     </section>
   </main>
 
