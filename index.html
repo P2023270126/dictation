@@ -15,7 +15,7 @@
     </section>
 
     <details id="parentSetup" class="card setup-card">
-      <summary>家長設定 / 新增或修改文章</summary>
+      <summary>家長設定 / 新增文章</summary>
       <div class="section-heading">
         <div>
           <h2 id="article-setup-title">文章設定</h2>
@@ -54,6 +54,42 @@
       <div class="button-row single-action">
         <button id="deleteArticleBtn" class="danger-btn">刪除選中文章</button>
       </div>
+    </details>
+
+    <details id="sheetSetup" class="card sheet-card">
+      <summary>Google Sheet 文章來源</summary>
+      <div class="section-heading">
+        <div>
+          <h2>同步 Google Sheet 文章</h2>
+          <p>貼上 Google Sheet 發佈成 CSV 的連結；所有裝置都可以讀同一批文章。</p>
+        </div>
+      </div>
+
+      <div class="sheet-format">
+        <p>Google Sheet 第一行請用這些欄位：</p>
+        <code>Title | Language | LineBreakMode | Passage</code>
+      </div>
+
+      <label for="sheetName">來源名稱</label>
+      <input id="sheetName" type="text" placeholder="例如：Peter 默書文章庫" />
+
+      <label for="sheetUrl">Google Sheet CSV 連結</label>
+      <input id="sheetUrl" type="url" placeholder="貼上 published CSV URL" />
+
+      <div class="button-row">
+        <button id="saveSheetSourceBtn" class="primary-btn">儲存 / 更新來源</button>
+        <button id="loadSheetBtn" class="secondary-btn">讀取 Google Sheet</button>
+      </div>
+
+      <label for="sheetSourceSelect">已儲存 Google Sheet 來源</label>
+      <select id="sheetSourceSelect"></select>
+
+      <div class="button-row">
+        <button id="loadSelectedSheetBtn" class="secondary-btn">讀取選中來源</button>
+        <button id="deleteSheetSourceBtn" class="danger-btn">刪除來源</button>
+      </div>
+
+      <p id="sheetStatus" class="small-status">尚未讀取 Google Sheet。</p>
     </details>
 
     <section class="card practice-card" aria-labelledby="practice-title">
@@ -106,8 +142,8 @@
     </section>
 
     <section class="note">
-      <h2>v1 說明</h2>
-      <p>練習畫面會隱藏文章內容，只保留文章題目、進度和控制按鈕。每段預設讀三次。朗讀功能使用瀏覽器內置 TTS，第一次播放需要你按一下按鈕。</p>
+      <h2>v6 說明</h2>
+      <p>練習畫面會隱藏文章內容，只保留文章題目、進度和控制按鈕。每段預設讀三次。文章可以來自本機儲存，亦可以來自 Google Sheet CSV。朗讀功能使用瀏覽器內置 TTS，第一次播放需要你按一下按鈕。</p>
     </section>
   </main>
 

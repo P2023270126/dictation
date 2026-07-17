@@ -1,4 +1,5 @@
 const STORAGE_KEY = "dictationPracticeArticlesV1";
+const SHEET_SOURCES_KEY = "dictationPracticeSheetSourcesV1";
 
 const SAMPLE_ARTICLES = [
   {
@@ -21,8 +22,16 @@ const elements = {
   articleTitle: document.getElementById("articleTitle"),
   articleText: document.getElementById("articleText"),
   lineBreakMode: document.getElementById("lineBreakMode"),
+  sheetName: document.getElementById("sheetName"),
+  sheetUrl: document.getElementById("sheetUrl"),
+  sheetSourceSelect: document.getElementById("sheetSourceSelect"),
+  sheetStatus: document.getElementById("sheetStatus"),
   saveArticleBtn: document.getElementById("saveArticleBtn"),
   deleteArticleBtn: document.getElementById("deleteArticleBtn"),
+  saveSheetSourceBtn: document.getElementById("saveSheetSourceBtn"),
+  loadSheetBtn: document.getElementById("loadSheetBtn"),
+  loadSelectedSheetBtn: document.getElementById("loadSelectedSheetBtn"),
+  deleteSheetSourceBtn: document.getElementById("deleteSheetSourceBtn"),
   startBtn: document.getElementById("startBtn"),
   parentSetup: document.getElementById("parentSetup"),
   languageMode: document.getElementById("languageMode"),
@@ -40,6 +49,8 @@ const elements = {
 };
 
 let articles = [];
+let sheetSources = [];
+let sheetArticles = [];
 let segments = [];
 let currentIndex = 0;
 let isSpeaking = false;
@@ -61,40 +72,89 @@ function saveArticles() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(articles));
 }
 
+function loadSheetSources() {
+  return JSON.parse(localStorage.getItem(SHEET_SOURCES_KEY) || "[]");
+}
+
+function saveSheetSources() {
+  localStorage.setItem(SHEET_SOURCES_KEY, JSON.stringify(sheetSources));
+}
+
+function getAllPracticeArticles() {
+  return [
+    ...articles.map((article) => ({ ...article, sourceType: "local" })),
+    ...sheetArticles.map((article) => ({ ...article, sourceType: "sheet" }))
+  ];
+}
+
+function getSelectedArticle() {
+  return getAllPracticeArticles().find((article) => article.id === elements.articleSelect.value);
+}
+
 function renderArticleOptions() {
   elements.articleSelect.innerHTML = "";
   elements.deleteArticleSelect.innerHTML = "";
 
-  articles.forEach((article) => {
-    const option = document.createElement("option");
-    option.value = article.id;
-    option.textContent = article.title;
-    elements.articleSelect.appendChild(option);
-
-    const deleteOption = document.createElement("option");
-    deleteOption.value = article.id;
-    deleteOption.textContent = article.title;
-    elements.deleteArticleSelect.appendChild(deleteOption);
-  });
-
   if (articles.length > 0) {
-    elements.articleSelect.value = articles[0].id;
-    elements.deleteArticleSelect.value = articles[0].id;
+    const localGroup = document.createElement("optgroup");
+    localGroup.label = "本機文章";
+
+    articles.forEach((article) => {
+      const option = document.createElement("option");
+      option.value = article.id;
+      option.textContent = article.title;
+      localGroup.appendChild(option);
+
+      const deleteOption = document.createElement("option");
+      deleteOption.value = article.id;
+      deleteOption.textContent = article.title;
+      elements.deleteArticleSelect.appendChild(deleteOption);
+    });
+
+    elements.articleSelect.appendChild(localGroup);
+  }
+
+  if (sheetArticles.length > 0) {
+    const sheetGroup = document.createElement("optgroup");
+    sheetGroup.label = "Google Sheet 文章";
+
+    sheetArticles.forEach((article) => {
+      const option = document.createElement("option");
+      option.value = article.id;
+      option.textContent = article.title;
+      sheetGroup.appendChild(option);
+    });
+
+    elements.articleSelect.appendChild(sheetGroup);
+  }
+
+  const firstArticle = getAllPracticeArticles()[0];
+  if (firstArticle) {
+    elements.articleSelect.value = firstArticle.id;
+    if (articles.length > 0) {
+      elements.deleteArticleSelect.value = articles[0].id;
+    }
     loadSelectedArticle();
   } else {
     elements.articleSelect.innerHTML = '<option value="">未有已儲存文章</option>';
-    elements.deleteArticleSelect.innerHTML = '<option value="">未有可刪除文章</option>';
     resetPractice();
-    updateStatus("未有已儲存文章。請在家長設定區新增文章。");
+    updateStatus("未有已儲存文章。請在家長設定區新增文章，或讀取 Google Sheet。");
+  }
+
+  if (articles.length > 0) {
+    elements.deleteArticleSelect.value = articles[0].id;
+  } else {
+    elements.deleteArticleSelect.innerHTML = '<option value="">未有可刪除文章</option>';
   }
 }
 
 function loadSelectedArticle() {
-  const selected = articles.find((article) => article.id === elements.articleSelect.value);
+  const selected = getSelectedArticle();
   if (!selected) return;
 
   resetPractice();
-  updateStatus(`已選擇「${selected.title}」。文章內容已隱藏，請按「開始默書」。`);
+  const sourceLabel = selected.sourceType === "sheet" ? "Google Sheet" : "本機";
+  updateStatus(`已選擇「${selected.title}」（${sourceLabel}）。文章內容已隱藏，請按「開始默書」。`);
 }
 
 function saveCurrentArticle() {
@@ -158,6 +218,204 @@ function deleteSelectedArticle() {
   updateStatus(`已刪除「${selected.title}」。`);
 }
 
+function renderSheetSourceOptions() {
+  elements.sheetSourceSelect.innerHTML = "";
+
+  if (sheetSources.length === 0) {
+    elements.sheetSourceSelect.innerHTML = '<option value="">未有已儲存來源</option>';
+    return;
+  }
+
+  sheetSources.forEach((source) => {
+    const option = document.createElement("option");
+    option.value = source.id;
+    option.textContent = source.name;
+    elements.sheetSourceSelect.appendChild(option);
+  });
+}
+
+function saveCurrentSheetSource() {
+  const name = elements.sheetName.value.trim();
+  const url = elements.sheetUrl.value.trim();
+
+  if (!name || !url) {
+    elements.sheetStatus.textContent = "請輸入來源名稱和 Google Sheet CSV 連結。";
+    return null;
+  }
+
+  const existingIndex = sheetSources.findIndex((source) => source.name === name);
+  const source = {
+    id: existingIndex >= 0 ? sheetSources[existingIndex].id : `sheet-source-${Date.now()}`,
+    name,
+    url
+  };
+
+  if (existingIndex >= 0) {
+    sheetSources[existingIndex] = source;
+  } else {
+    sheetSources.push(source);
+  }
+
+  saveSheetSources();
+  renderSheetSourceOptions();
+  elements.sheetSourceSelect.value = source.id;
+  elements.sheetStatus.textContent = `已儲存來源「${name}」。`;
+  return source;
+}
+
+function parseCsv(csvText) {
+  const rows = [];
+  let row = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < csvText.length; index += 1) {
+    const char = csvText[index];
+    const nextChar = csvText[index + 1];
+
+    if (char === '"' && inQuotes && nextChar === '"') {
+      field += '"';
+      index += 1;
+    } else if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      row.push(field);
+      field = "";
+    } else if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && nextChar === "\n") index += 1;
+      row.push(field);
+      if (row.some((cell) => cell.trim() !== "")) rows.push(row);
+      row = [];
+      field = "";
+    } else {
+      field += char;
+    }
+  }
+
+  row.push(field);
+  if (row.some((cell) => cell.trim() !== "")) rows.push(row);
+  return rows;
+}
+
+function normalizeHeader(header) {
+  return header.trim().toLowerCase().replace(/[\s_-]+/g, "");
+}
+
+function getCsvValue(record, names) {
+  for (const name of names) {
+    const value = record[normalizeHeader(name)];
+    if (value !== undefined) return value.trim();
+  }
+  return "";
+}
+
+function parseBoolean(value, defaultValue = true) {
+  if (!value) return defaultValue;
+  return /^(true|yes|y|1|是|開|on)$/i.test(value.trim());
+}
+
+function articlesFromCsv(csvText, source) {
+  const rows = parseCsv(csvText);
+  if (rows.length < 2) return [];
+
+  const headers = rows[0].map(normalizeHeader);
+  const result = [];
+
+  rows.slice(1).forEach((cells, index) => {
+    const record = {};
+    headers.forEach((header, headerIndex) => {
+      record[header] = cells[headerIndex] || "";
+    });
+
+    const title = getCsvValue(record, ["Title", "文章名稱", "Name"]);
+    const text = getCsvValue(record, ["Passage", "Text", "文章", "默書文章", "Content"]);
+    const language = getCsvValue(record, ["Language", "Lang", "語言"]);
+    const lineBreakMode = parseBoolean(getCsvValue(record, ["LineBreakMode", "LineBreak", "換行", "Enter"]), true);
+
+    if (!title || !text) return;
+
+    result.push({
+      id: `sheet:${source.id}:${index}`,
+      title: `${source.name}：${title}`,
+      text,
+      language,
+      lineBreakMode,
+      sourceName: source.name
+    });
+  });
+
+  return result;
+}
+
+async function loadSheetSource(source) {
+  if (!source?.url) {
+    elements.sheetStatus.textContent = "請先選擇或儲存一個 Google Sheet 來源。";
+    return;
+  }
+
+  elements.sheetStatus.textContent = `正在讀取「${source.name}」...`;
+
+  try {
+    const response = await fetch(source.url, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+    const csvText = await response.text();
+    const loadedArticles = articlesFromCsv(csvText, source);
+
+    sheetArticles = [
+      ...sheetArticles.filter((article) => article.sourceName !== source.name),
+      ...loadedArticles
+    ];
+
+    renderArticleOptions();
+    if (loadedArticles.length > 0) {
+      elements.articleSelect.value = loadedArticles[0].id;
+      loadSelectedArticle();
+    }
+    elements.sheetStatus.textContent = `已讀取「${source.name}」：${loadedArticles.length} 篇文章。`;
+    updateStatus(`Google Sheet 已同步：${loadedArticles.length} 篇文章可選。`);
+  } catch (error) {
+    elements.sheetStatus.textContent = "讀取失敗。請確認 Google Sheet 已 Publish to web，並使用 CSV 連結。";
+  }
+}
+
+function saveAndLoadCurrentSheetSource() {
+  const source = saveCurrentSheetSource();
+  if (source) loadSheetSource(source);
+}
+
+function loadSelectedSheetSource() {
+  const source = sheetSources.find((item) => item.id === elements.sheetSourceSelect.value);
+  if (!source) {
+    elements.sheetStatus.textContent = "未有選中的 Google Sheet 來源。";
+    return;
+  }
+
+  elements.sheetName.value = source.name;
+  elements.sheetUrl.value = source.url;
+  loadSheetSource(source);
+}
+
+function deleteSelectedSheetSource() {
+  const source = sheetSources.find((item) => item.id === elements.sheetSourceSelect.value);
+  if (!source) {
+    elements.sheetStatus.textContent = "未有可刪除的 Google Sheet 來源。";
+    return;
+  }
+
+  const ok = window.confirm(`確定刪除 Google Sheet 來源「${source.name}」？這只會刪除來源設定，不會刪除 Google Sheet 本身。`);
+  if (!ok) return;
+
+  sheetSources = sheetSources.filter((item) => item.id !== source.id);
+  sheetArticles = sheetArticles.filter((article) => article.sourceName !== source.name);
+  saveSheetSources();
+  renderSheetSourceOptions();
+  renderArticleOptions();
+  elements.sheetName.value = "";
+  elements.sheetUrl.value = "";
+  elements.sheetStatus.textContent = `已刪除來源「${source.name}」。`;
+}
+
 function splitLineByPunctuation(line) {
   const matches = line.match(/[^，。！？；：、,.?!;:]+[，。！？；：、,.?!;:]?[」』”"')）]?/g) || [];
   return matches.map((segment) => segment.trim()).filter(Boolean);
@@ -189,6 +447,18 @@ function detectLanguage(text) {
 function getSelectedLanguage(text = "") {
   const mode = elements.languageMode.value;
   return mode === "auto" ? detectLanguage(text) : mode;
+}
+
+function getPracticeLanguage(text = "") {
+  const mode = elements.languageMode.value;
+  if (mode !== "auto") return mode;
+
+  const selected = getSelectedArticle();
+  const language = selected?.language?.toLowerCase?.().trim();
+  if (language === "zh" || language === "chinese" || language === "cantonese" || language === "yue") return "zh";
+  if (language === "en" || language === "english") return "en";
+
+  return detectLanguage(text);
 }
 
 function convertPunctuationForSpeech(text, lang) {
@@ -361,7 +631,7 @@ function resetPractice() {
 }
 
 function preparePractice() {
-  const selected = articles.find((article) => article.id === elements.articleSelect.value);
+  const selected = getSelectedArticle();
   const text = selected?.text?.trim() || elements.articleText.value.trim();
   if (!text) {
     updateStatus("請先在家長設定區新增並儲存一篇文章。");
@@ -389,7 +659,7 @@ async function playCurrentSentenceThreeTimes() {
   elements.completeMessage.hidden = true;
 
   const sentence = segments[currentIndex];
-  const lang = getSelectedLanguage(sentence);
+  const lang = getPracticeLanguage(sentence);
   const speechText = convertPunctuationForSpeech(sentence, lang);
 
   try {
@@ -428,7 +698,7 @@ async function replayCurrentSentenceOnce() {
   setButtonStates();
 
   const sentence = segments[currentIndex];
-  const lang = getSelectedLanguage(sentence);
+  const lang = getPracticeLanguage(sentence);
   const speechText = convertPunctuationForSpeech(sentence, lang);
 
   try {
@@ -464,7 +734,7 @@ async function readWholeArticleOnce() {
       updatePracticeDisplay();
 
       const sentence = segments[index];
-      const lang = getSelectedLanguage(sentence);
+      const lang = getPracticeLanguage(sentence);
       const speechText = convertPunctuationForSpeech(sentence, lang);
       elements.repeatText.textContent = "全文朗讀中";
       await speakText(speechText, { lang, rate: 0.6 });
@@ -524,11 +794,23 @@ function init() {
   }
 
   articles = loadArticles();
+  sheetSources = loadSheetSources();
   renderArticleOptions();
+  renderSheetSourceOptions();
 
   elements.articleSelect.addEventListener("change", loadSelectedArticle);
   elements.saveArticleBtn.addEventListener("click", saveCurrentArticle);
   elements.deleteArticleBtn.addEventListener("click", deleteSelectedArticle);
+  elements.saveSheetSourceBtn.addEventListener("click", saveCurrentSheetSource);
+  elements.loadSheetBtn.addEventListener("click", saveAndLoadCurrentSheetSource);
+  elements.loadSelectedSheetBtn.addEventListener("click", loadSelectedSheetSource);
+  elements.deleteSheetSourceBtn.addEventListener("click", deleteSelectedSheetSource);
+  elements.sheetSourceSelect.addEventListener("change", () => {
+    const source = sheetSources.find((item) => item.id === elements.sheetSourceSelect.value);
+    if (!source) return;
+    elements.sheetName.value = source.name;
+    elements.sheetUrl.value = source.url;
+  });
   elements.startBtn.addEventListener("click", startPractice);
   elements.prevBtn.addEventListener("click", goToPreviousSentence);
   elements.replayBtn.addEventListener("click", replayCurrentSentenceOnce);
