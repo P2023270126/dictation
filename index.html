@@ -37,7 +37,7 @@
 
       <div class="sentence-panel">
         <p class="sentence-label">小朋友練習畫面</p>
-        <div id="currentSentence" class="current-sentence masked">內容已隱藏，請用耳仔聽。</div>
+        <button id="startBtn" class="current-sentence masked start-panel">開始默書</button>
       </div>
 
       <div class="progress-wrap" aria-label="默書進度">
@@ -52,9 +52,8 @@
 
       <div class="controls" aria-label="播放控制">
         <button id="prevBtn">上一句</button>
-        <button id="replayBtn">重讀一次</button>
         <button id="nextBtn" class="primary-btn">下一句</button>
-        <button id="startBtn" class="secondary-btn">開始默書</button>
+        <button id="replayBtn">重讀一次</button>
         <button id="readAllBtn" class="wide-btn">重讀全文</button>
         <button id="stopBtn" class="quiet-btn">停止朗讀</button>
       </div>
@@ -65,7 +64,7 @@
     </section>
 
     <section class="note">
-      <h2>v7 說明</h2>
+      <h2>v8 說明</h2>
       <p>文章庫固定由指定 Google Sheet 自動讀取。練習畫面會隱藏文章內容，只保留文章題目、進度和控制按鈕。每段預設讀三次。朗讀功能使用瀏覽器內置 TTS，第一次播放需要你按一下按鈕。</p>
     </section>
   </main>

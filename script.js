@@ -6,7 +6,6 @@ const elements = {
   startBtn: document.getElementById("startBtn"),
   languageMode: document.getElementById("languageMode"),
   statusText: document.getElementById("statusText"),
-  currentSentence: document.getElementById("currentSentence"),
   progressText: document.getElementById("progressText"),
   repeatText: document.getElementById("repeatText"),
   progressBar: document.getElementById("progressBar"),
@@ -26,6 +25,7 @@ let activeTimer = null;
 let activeDelayResolve = null;
 let playbackToken = 0;
 let voices = [];
+let practiceCompleted = false;
 
 function parseCsv(csvText) {
   const rows = [];
@@ -349,9 +349,6 @@ function updatePracticeDisplay() {
   const current = total ? currentIndex + 1 : 0;
   const percent = total ? (current / total) * 100 : 0;
 
-  elements.currentSentence.textContent = total
-    ? `第 ${current} 段內容已隱藏，請細心聽。`
-    : "內容已隱藏，請用耳仔聽。";
   elements.progressText.textContent = `第 ${current} 段 / 共 ${total} 段`;
   elements.progressBar.style.width = `${percent}%`;
   setButtonStates();
@@ -360,10 +357,19 @@ function updatePracticeDisplay() {
 function setButtonStates() {
   const hasArticles = articles.length > 0;
   const hasSegments = segments.length > 0;
+  const startText = !hasArticles
+    ? "正在讀取文章..."
+    : isSpeaking
+      ? "朗讀中..."
+      : practiceCompleted
+        ? "重新開始默書"
+        : "開始默書";
+
+  elements.startBtn.textContent = startText;
   elements.prevBtn.disabled = !hasSegments || currentIndex <= 0 || isSpeaking;
   elements.replayBtn.disabled = !hasSegments || isSpeaking;
   elements.nextBtn.disabled = !hasSegments || isSpeaking;
-  elements.readAllBtn.disabled = !hasSegments || isSpeaking;
+  elements.readAllBtn.disabled = !hasSegments || !practiceCompleted || isSpeaking;
   elements.startBtn.disabled = !hasArticles || isSpeaking;
 }
 
@@ -371,6 +377,7 @@ function resetPractice() {
   stopSpeech();
   segments = [];
   currentIndex = 0;
+  practiceCompleted = false;
   elements.completeMessage.hidden = true;
   elements.repeatText.textContent = "等待開始";
   updatePracticeDisplay();
@@ -388,6 +395,7 @@ function preparePractice() {
     lineBreakMode: selected?.lineBreakMode !== false
   });
   currentIndex = 0;
+  practiceCompleted = false;
   elements.completeMessage.hidden = true;
   elements.repeatText.textContent = "準備播放";
   updatePracticeDisplay();
@@ -505,6 +513,7 @@ function goToNextSentence() {
   if (!segments.length && !preparePractice()) return;
 
   if (currentIndex >= segments.length - 1) {
+    practiceCompleted = true;
     elements.completeMessage.hidden = false;
     elements.repeatText.textContent = "已完成";
     elements.statusText.textContent = "太好了！整篇默書已完成。";

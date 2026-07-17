@@ -232,6 +232,12 @@ button:disabled {
   transform: none;
 }
 
+#readAllBtn:disabled {
+  background: #eef2f7;
+  color: #9aa7b8;
+  opacity: 1;
+}
+
 .primary-btn {
   background: var(--primary);
   color: white;
@@ -302,6 +308,25 @@ button:disabled {
   color: var(--primary-dark);
   text-align: center;
   font-size: clamp(1.35rem, 5vw, 2.1rem);
+}
+
+.start-panel {
+  width: 100%;
+  border: 0;
+  background: linear-gradient(135deg, var(--primary), #63b3ff);
+  color: #fff;
+  box-shadow: 0 12px 30px rgba(31, 117, 255, 0.22);
+}
+
+.start-panel:hover {
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+}
+
+.start-panel:disabled {
+  background: #e6edf7;
+  color: #7c8ba0;
+  box-shadow: none;
+  opacity: 1;
 }
 
 .progress-wrap {
