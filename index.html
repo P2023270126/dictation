@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>默書練習小助手</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app-shell">
+    <section class="hero">
+      <p class="eyebrow">Dictation Practice</p>
+      <h1>默書練習小助手</h1>
+      <p class="subtitle">貼上中文或英文課文，系統會逐段慢速讀三次，連標點都讀出。</p>
+    </section>
+
+    <details id="parentSetup" class="card setup-card">
+      <summary>家長設定 / 新增或修改文章</summary>
+      <div class="section-heading">
+        <div>
+          <h2 id="article-setup-title">文章設定</h2>
+          <p>這一區只給家長使用。儲存後，文章內容會在練習畫面隱藏。</p>
+        </div>
+      </div>
+
+      <label for="articleTitle">文章名稱</label>
+      <input id="articleTitle" type="text" placeholder="例如：中文默書第 3 課" />
+
+      <label for="articleText">默書文章</label>
+      <textarea id="articleText" rows="8" placeholder="在這裡貼上默書文章。中文或英文都可以。"></textarea>
+
+      <label class="checkbox-label" for="lineBreakMode">
+        <input id="lineBreakMode" type="checkbox" checked />
+        Enter 換行 = 新一段朗讀
+      </label>
+
+      <div class="button-row">
+        <button id="saveArticleBtn" class="primary-btn">儲存新文章</button>
+      </div>
+    </details>
+
+    <details id="deleteSetup" class="card delete-card">
+      <summary>管理舊文章 / 刪除文章</summary>
+      <div class="section-heading">
+        <div>
+          <h2>刪除舊文章</h2>
+          <p>如果想修改文章，建議先刪除舊文章，再新增一篇新文章。</p>
+        </div>
+      </div>
+
+      <label for="deleteArticleSelect">選擇要刪除的文章</label>
+      <select id="deleteArticleSelect"></select>
+
+      <div class="button-row single-action">
+        <button id="deleteArticleBtn" class="danger-btn">刪除選中文章</button>
+      </div>
+    </details>
+
+    <section class="card practice-card" aria-labelledby="practice-title">
+      <div class="section-heading">
+        <div>
+          <h2 id="practice-title">默書播放</h2>
+          <p id="statusText">請先選擇或儲存一篇文章。</p>
+        </div>
+
+        <div class="language-control">
+          <label for="languageMode">朗讀語言</label>
+          <select id="languageMode">
+            <option value="auto">自動</option>
+            <option value="zh">中文</option>
+            <option value="en">English</option>
+          </select>
+        </div>
+      </div>
+
+      <label for="articleSelect">選擇文章</label>
+      <select id="articleSelect"></select>
+
+      <div class="sentence-panel">
+        <p class="sentence-label">小朋友練習畫面</p>
+        <div id="currentSentence" class="current-sentence masked">內容已隱藏，請用耳仔聽。</div>
+      </div>
+
+      <div class="progress-wrap" aria-label="默書進度">
+        <div class="progress-info">
+          <span id="progressText">第 0 段 / 共 0 段</span>
+          <span id="repeatText">等待開始</span>
+        </div>
+        <div class="progress-track">
+          <div id="progressBar" class="progress-bar"></div>
+        </div>
+      </div>
+
+      <div class="controls" aria-label="播放控制">
+        <button id="prevBtn">上一句</button>
+        <button id="replayBtn">重讀一次</button>
+        <button id="nextBtn" class="primary-btn">下一句</button>
+        <button id="startBtn" class="secondary-btn">開始默書</button>
+        <button id="readAllBtn" class="wide-btn">重讀全文</button>
+        <button id="stopBtn" class="quiet-btn">停止朗讀</button>
+      </div>
+
+      <div id="completeMessage" class="complete-message" hidden>
+        太好了！你已完成整篇默書。但記住睇多一次呀！叻仔！
+      </div>
+    </section>
+
+    <section class="note">
+      <h2>v1 說明</h2>
+      <p>練習畫面會隱藏文章內容，只保留文章題目、進度和控制按鈕。每段預設讀三次。朗讀功能使用瀏覽器內置 TTS，第一次播放需要你按一下按鈕。</p>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
