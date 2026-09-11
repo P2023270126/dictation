@@ -1,7 +1,9 @@
 const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfmlTFpkVroBCn-XVabMyXFPb-TDwvpqmHGH6hJc1NmN7t8CwtXpVeGnm2DfF36hzzYGDC0Wja0iAC/pub?output=csv";
 const SENTENCE_REPEAT_COUNT = 3;
+const REPEAT_PAUSE_MS = 6000;
+const SENTENCE_PAUSE_MS = 6000;
 const CHINESE_SPEECH_RATE = 0.82;
-const ENGLISH_SPEECH_RATE = 0.67;
+const ENGLISH_SPEECH_RATE = 0.5;
 
 const STORAGE_KEYS = {
   zhVoice: "dictationCoach.zhVoiceURI",
@@ -311,7 +313,9 @@ async function repeatWholeArticle() {
     state.currentIndex = i;
     updateProgress();
     await speakSentenceRepeated(state.sentences[i], state.currentArticle.language, false);
-    await wait(650);
+    if (i < state.sentences.length - 1) {
+      await wait(SENTENCE_PAUSE_MS);
+    }
   }
 
   state.isRepeatingAll = false;
@@ -359,7 +363,8 @@ async function speakSentenceRepeated(sentence, language, shouldMarkComplete) {
     }
 
     if (repeatIndex < SENTENCE_REPEAT_COUNT) {
-      await wait(550);
+      setStatus(`暫停 ${REPEAT_PAUSE_MS / 1000} 秒後重讀...`);
+      await wait(REPEAT_PAUSE_MS);
     }
   }
 
