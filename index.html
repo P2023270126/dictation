@@ -1,71 +1,70 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>默書練習小助手</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dictation Coach</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="app-shell">
-    <section class="hero">
-      <p class="eyebrow">Dictation Practice</p>
-      <h1>默書練習小助手</h1>
-      <p class="subtitle">從 Google Sheet 自動讀取最新默書文章，逐段慢速讀三次，連標點都讀出。</p>
-    </section>
+    <header class="hero">
+      <p class="eyebrow">Dictation Coach</p>
+      <h1>默書練習</h1>
+      <p class="subtitle">選擇文章後，按「開始默書」。系統會自動讀取最新 Google Sheet 文章庫。</p>
+    </header>
 
-    <section class="card practice-card" aria-labelledby="practice-title">
-      <div class="section-heading">
-        <div>
-          <h2 id="practice-title">默書播放</h2>
-          <p id="statusText">正在讀取 Google Sheet 文章庫...</p>
-        </div>
-
-        <div class="language-control">
-          <label for="languageMode">朗讀語言</label>
-          <select id="languageMode">
-            <option value="auto">自動</option>
-            <option value="zh">中文</option>
-            <option value="en">English</option>
-          </select>
-        </div>
+    <section class="practice-panel" aria-label="默書練習">
+      <div class="field-group">
+        <label for="articleSelect">選擇文章</label>
+        <select id="articleSelect">
+          <option value="">正在讀取文章...</option>
+        </select>
       </div>
 
-      <label for="articleSelect">選擇文章</label>
-      <select id="articleSelect"></select>
-      <p id="libraryStatus" class="small-status">文章庫會在頁面開啟時自動同步。</p>
+      <button id="startBtn" class="start-button" type="button" disabled>開始默書</button>
 
-      <div class="sentence-panel">
-        <p class="sentence-label">小朋友練習畫面</p>
-        <button id="startBtn" class="current-sentence masked start-panel">開始默書</button>
-      </div>
-
-      <div class="progress-wrap" aria-label="默書進度">
-        <div class="progress-info">
-          <span id="progressText">第 0 段 / 共 0 段</span>
-          <span id="repeatText">等待開始</span>
-        </div>
-        <div class="progress-track">
-          <div id="progressBar" class="progress-bar"></div>
-        </div>
+      <div class="progress-row">
+        <span id="progressText">尚未開始</span>
+        <span id="statusText">正在連接文章庫...</span>
       </div>
 
       <div class="controls" aria-label="播放控制">
-        <button id="prevBtn">上一句</button>
-        <button id="nextBtn" class="primary-btn">下一句</button>
-        <button id="replayBtn">重讀一次</button>
-        <button id="readAllBtn" class="wide-btn">重讀全文</button>
-        <button id="stopBtn" class="quiet-btn">停止朗讀</button>
-      </div>
-
-      <div id="completeMessage" class="complete-message" hidden>
-        太好了！你已完成整篇默書。但記住睇多一次呀！叻仔！
+        <button id="prevBtn" type="button" disabled>上一句</button>
+        <button id="nextBtn" type="button" disabled>下一句</button>
+        <button id="repeatBtn" type="button" disabled>重讀一次</button>
+        <button id="repeatAllBtn" type="button" disabled>重讀全文</button>
+        <button id="stopBtn" type="button" disabled>停止朗讀</button>
       </div>
     </section>
 
-    <section class="note">
-      <h2>v8 說明</h2>
-      <p>文章庫固定由指定 Google Sheet 自動讀取。練習畫面會隱藏文章內容，只保留文章題目、進度和控制按鈕。每段預設讀三次。朗讀功能使用瀏覽器內置 TTS，第一次播放需要你按一下按鈕。</p>
+    <section class="settings-panel" aria-label="朗讀聲音設定">
+      <button id="settingsToggle" class="settings-toggle" type="button" aria-expanded="false">
+        朗讀聲音設定
+      </button>
+
+      <div id="settingsBody" class="settings-body" hidden>
+        <div class="voice-grid">
+          <div class="field-group">
+            <label for="zhVoiceSelect">中文 / 粵語聲音</label>
+            <select id="zhVoiceSelect">
+              <option value="auto">自動選擇（女聲優先）</option>
+            </select>
+          </div>
+
+          <div class="field-group">
+            <label for="enVoiceSelect">英文聲音</label>
+            <select id="enVoiceSelect">
+              <option value="auto">自動選擇（女聲優先）</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-actions">
+          <button id="refreshVoicesBtn" type="button">重新偵測聲音</button>
+          <p id="voiceStatus">正在偵測可用聲音...</p>
+        </div>
+      </div>
     </section>
   </main>
 
