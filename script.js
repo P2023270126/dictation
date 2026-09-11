@@ -1,566 +1,548 @@
 const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfmlTFpkVroBCn-XVabMyXFPb-TDwvpqmHGH6hJc1NmN7t8CwtXpVeGnm2DfF36hzzYGDC0Wja0iAC/pub?output=csv";
 
-const elements = {
-  articleSelect: document.getElementById("articleSelect"),
-  libraryStatus: document.getElementById("libraryStatus"),
-  startBtn: document.getElementById("startBtn"),
-  languageMode: document.getElementById("languageMode"),
-  statusText: document.getElementById("statusText"),
-  progressText: document.getElementById("progressText"),
-  repeatText: document.getElementById("repeatText"),
-  progressBar: document.getElementById("progressBar"),
-  prevBtn: document.getElementById("prevBtn"),
-  replayBtn: document.getElementById("replayBtn"),
-  nextBtn: document.getElementById("nextBtn"),
-  readAllBtn: document.getElementById("readAllBtn"),
-  stopBtn: document.getElementById("stopBtn"),
-  completeMessage: document.getElementById("completeMessage")
+const STORAGE_KEYS = {
+  zhVoice: "dictationCoach.zhVoiceURI",
+  enVoice: "dictationCoach.enVoiceURI"
 };
 
-let articles = [];
-let segments = [];
-let currentIndex = 0;
-let isSpeaking = false;
-let activeTimer = null;
-let activeDelayResolve = null;
-let playbackToken = 0;
-let voices = [];
-let practiceCompleted = false;
+const elements = {};
+const state = {
+  articles: [],
+  currentArticle: null,
+  sentences: [],
+  currentIndex: 0,
+  voices: [],
+  isSpeaking: false,
+  isCompleted: false,
+  isRepeatingAll: false,
+  speechToken: 0
+};
 
-function parseCsv(csvText) {
+document.addEventListener("DOMContentLoaded", () => {
+  collectElements();
+  bindEvents();
+  loadVoices();
+  loadArticlesFromSheet();
+
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }
+});
+
+function collectElements() {
+  elements.articleSelect = document.querySelector("#articleSelect");
+  elements.startBtn = document.querySelector("#startBtn");
+  elements.prevBtn = document.querySelector("#prevBtn");
+  elements.nextBtn = document.querySelector("#nextBtn");
+  elements.repeatBtn = document.querySelector("#repeatBtn");
+  elements.repeatAllBtn = document.querySelector("#repeatAllBtn");
+  elements.stopBtn = document.querySelector("#stopBtn");
+  elements.progressText = document.querySelector("#progressText");
+  elements.statusText = document.querySelector("#statusText");
+  elements.settingsToggle = document.querySelector("#settingsToggle");
+  elements.settingsBody = document.querySelector("#settingsBody");
+  elements.zhVoiceSelect = document.querySelector("#zhVoiceSelect");
+  elements.enVoiceSelect = document.querySelector("#enVoiceSelect");
+  elements.refreshVoicesBtn = document.querySelector("#refreshVoicesBtn");
+  elements.voiceStatus = document.querySelector("#voiceStatus");
+}
+
+function bindEvents() {
+  elements.articleSelect.addEventListener("change", selectArticle);
+  elements.startBtn.addEventListener("click", startPractice);
+  elements.prevBtn.addEventListener("click", previousSentence);
+  elements.nextBtn.addEventListener("click", nextSentence);
+  elements.repeatBtn.addEventListener("click", repeatCurrentSentence);
+  elements.repeatAllBtn.addEventListener("click", repeatWholeArticle);
+  elements.stopBtn.addEventListener("click", stopSpeech);
+  elements.refreshVoicesBtn.addEventListener("click", loadVoices);
+
+  elements.settingsToggle.addEventListener("click", () => {
+    const isOpen = !elements.settingsBody.hidden;
+    elements.settingsBody.hidden = isOpen;
+    elements.settingsToggle.setAttribute("aria-expanded", String(!isOpen));
+  });
+
+  elements.zhVoiceSelect.addEventListener("change", () => {
+    localStorage.setItem(STORAGE_KEYS.zhVoice, elements.zhVoiceSelect.value);
+    updateVoiceStatus();
+  });
+
+  elements.enVoiceSelect.addEventListener("change", () => {
+    localStorage.setItem(STORAGE_KEYS.enVoice, elements.enVoiceSelect.value);
+    updateVoiceStatus();
+  });
+}
+
+async function loadArticlesFromSheet() {
+  setStatus("正在讀取 Google Sheet...");
+  elements.articleSelect.innerHTML = '<option value="">正在讀取文章...</option>';
+  elements.articleSelect.disabled = true;
+  elements.startBtn.disabled = true;
+
+  try {
+    const url = `${GOOGLE_SHEET_CSV_URL}&cacheBust=${Date.now()}`;
+    const response = await fetch(url);
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const csv = await response.text();
+    const articles = parseArticlesFromCsv(csv);
+
+    if (!articles.length) {
+      throw new Error("No articles found");
+    }
+
+    state.articles = articles;
+    renderArticleOptions();
+    setStatus(`已讀取 ${articles.length} 篇文章`);
+  } catch (error) {
+    console.error(error);
+    state.articles = [];
+    elements.articleSelect.innerHTML = '<option value="">未能讀取文章</option>';
+    setStatus("讀取失敗，請檢查 Google Sheet 是否已 publish as CSV");
+  }
+}
+
+function parseArticlesFromCsv(csvText) {
+  const rows = parseCsv(csvText).filter((row) => row.some((cell) => cell.trim() !== ""));
+
+  if (rows.length < 2) {
+    return [];
+  }
+
+  const headers = rows[0].map(normalizeHeader);
+  const titleIndex = findHeaderIndex(headers, ["title", "name", "文章", "標題"]);
+  const languageIndex = findHeaderIndex(headers, ["language", "lang", "語言"]);
+  const lineBreakIndex = findHeaderIndex(headers, ["linebreakmode", "linebreak", "manualbreak", "分行", "換行"]);
+  const passageIndex = findHeaderIndex(headers, ["passage", "text", "content", "article", "文章內容", "內容"]);
+
+  if (titleIndex === -1 || passageIndex === -1) {
+    return [];
+  }
+
+  return rows.slice(1).map((row, index) => {
+    const title = (row[titleIndex] || "").trim();
+    const passage = (row[passageIndex] || "").trim();
+
+    if (!title || !passage) {
+      return null;
+    }
+
+    return {
+      id: `sheet-${index}`,
+      title,
+      language: normalizeLanguage(row[languageIndex] || passage),
+      lineBreakMode: isTruthy(row[lineBreakIndex]),
+      passage
+    };
+  }).filter(Boolean);
+}
+
+function parseCsv(text) {
   const rows = [];
   let row = [];
-  let field = "";
+  let cell = "";
   let inQuotes = false;
 
-  for (let index = 0; index < csvText.length; index += 1) {
-    const char = csvText[index];
-    const nextChar = csvText[index + 1];
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const nextChar = text[i + 1];
 
     if (char === '"' && inQuotes && nextChar === '"') {
-      field += '"';
-      index += 1;
+      cell += '"';
+      i += 1;
     } else if (char === '"') {
       inQuotes = !inQuotes;
     } else if (char === "," && !inQuotes) {
-      row.push(field);
-      field = "";
+      row.push(cell);
+      cell = "";
     } else if ((char === "\n" || char === "\r") && !inQuotes) {
-      if (char === "\r" && nextChar === "\n") index += 1;
-      row.push(field);
-      if (row.some((cell) => cell.trim() !== "")) rows.push(row);
+      if (char === "\r" && nextChar === "\n") {
+        i += 1;
+      }
+      row.push(cell);
+      rows.push(row);
       row = [];
-      field = "";
+      cell = "";
     } else {
-      field += char;
+      cell += char;
     }
   }
 
-  row.push(field);
-  if (row.some((cell) => cell.trim() !== "")) rows.push(row);
+  row.push(cell);
+  rows.push(row);
   return rows;
 }
 
-function normalizeHeader(header) {
-  return header.trim().toLowerCase().replace(/[\s_-]+/g, "");
+function normalizeHeader(value) {
+  return String(value || "").trim().toLowerCase().replace(/\s+/g, "");
 }
 
-function getCsvValue(record, names) {
-  for (const name of names) {
-    const value = record[normalizeHeader(name)];
-    if (value !== undefined) return value.trim();
+function findHeaderIndex(headers, names) {
+  return headers.findIndex((header) => names.includes(header));
+}
+
+function normalizeLanguage(value) {
+  const input = String(value || "").trim().toLowerCase();
+
+  if (input.includes("zh") || input.includes("chinese") || input.includes("中文") || input.includes("cantonese") || input.includes("粵")) {
+    return "zh";
   }
-  return "";
-}
 
-function parseBoolean(value, defaultValue = true) {
-  if (!value) return defaultValue;
-  return /^(true|yes|y|1|是|開|on)$/i.test(value.trim());
-}
-
-function articlesFromCsv(csvText) {
-  const rows = parseCsv(csvText);
-  if (rows.length < 2) return [];
-
-  const headers = rows[0].map(normalizeHeader);
-  const result = [];
-
-  rows.slice(1).forEach((cells, index) => {
-    const record = {};
-    headers.forEach((header, headerIndex) => {
-      record[header] = cells[headerIndex] || "";
-    });
-
-    const title = getCsvValue(record, ["Title", "文章名稱", "Name"]);
-    const text = getCsvValue(record, ["Passage", "Text", "文章", "默書文章", "Content"]);
-    const language = getCsvValue(record, ["Language", "Lang", "語言"]);
-    const lineBreakMode = parseBoolean(getCsvValue(record, ["LineBreakMode", "LineBreak", "換行", "Enter"]), true);
-
-    if (!title || !text) return;
-
-    result.push({
-      id: `sheet-article-${index}`,
-      title,
-      text,
-      language,
-      lineBreakMode
-    });
-  });
-
-  return result;
-}
-
-async function loadArticleLibrary() {
-  elements.articleSelect.innerHTML = '<option value="">正在讀取文章庫...</option>';
-  elements.libraryStatus.textContent = "正在同步 Google Sheet 最新文章庫...";
-  elements.statusText.textContent = "正在讀取 Google Sheet 文章庫...";
-  setButtonStates();
-
-  try {
-    const response = await fetch(GOOGLE_SHEET_CSV_URL, { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-    const csvText = await response.text();
-    articles = articlesFromCsv(csvText);
-    renderArticleOptions();
-
-    if (articles.length > 0) {
-      elements.libraryStatus.textContent = `已同步 Google Sheet：${articles.length} 篇文章。`;
-      elements.statusText.textContent = "請選擇文章，然後按「開始默書」。";
-    } else {
-      elements.libraryStatus.textContent = "Google Sheet 暫時未有可用文章。請確認欄位為 Title、Language、LineBreakMode、Passage。";
-      elements.statusText.textContent = "未有可用文章。";
-    }
-  } catch (error) {
-    articles = [];
-    renderArticleOptions();
-    elements.libraryStatus.textContent = "讀取 Google Sheet 失敗。請確認 Published CSV link 仍然有效。";
-    elements.statusText.textContent = "文章庫讀取失敗。";
+  if (input.includes("en") || input.includes("english")) {
+    return "en";
   }
+
+  return /[\u4e00-\u9fff]/.test(input) ? "zh" : "en";
+}
+
+function isTruthy(value) {
+  return ["true", "yes", "y", "1", "manual"].includes(String(value || "").trim().toLowerCase());
 }
 
 function renderArticleOptions() {
-  elements.articleSelect.innerHTML = "";
+  elements.articleSelect.innerHTML = '<option value="">請選擇文章</option>';
 
-  if (articles.length === 0) {
-    elements.articleSelect.innerHTML = '<option value="">未有可用文章</option>';
-    resetPractice();
-    return;
-  }
-
-  articles.forEach((article) => {
+  state.articles.forEach((article) => {
     const option = document.createElement("option");
     option.value = article.id;
     option.textContent = article.title;
     elements.articleSelect.appendChild(option);
   });
 
-  elements.articleSelect.value = articles[0].id;
-  loadSelectedArticle();
+  elements.articleSelect.disabled = false;
+  updateControls();
 }
 
-function getSelectedArticle() {
-  return articles.find((article) => article.id === elements.articleSelect.value);
-}
+function selectArticle() {
+  const articleId = elements.articleSelect.value;
+  const article = state.articles.find((item) => item.id === articleId);
 
-function loadSelectedArticle() {
-  const selected = getSelectedArticle();
-  if (!selected) return;
+  stopSpeech();
+  state.currentArticle = article || null;
+  state.sentences = article ? splitPassage(article.passage, article.lineBreakMode) : [];
+  state.currentIndex = 0;
+  state.isCompleted = false;
 
-  resetPractice();
-  elements.statusText.textContent = `已選擇「${selected.title}」。文章內容已隱藏，請按「開始默書」。`;
-}
-
-function splitLineByPunctuation(line) {
-  const matches = line.match(/[^，。！？；：、,.?!;:]+[，。！？；：、,.?!;:]?[」』”"')）]?/g) || [];
-  return matches.map((segment) => segment.trim()).filter(Boolean);
-}
-
-function splitIntoSegments(text, options = {}) {
-  const normalized = text
-    .replace(/\r/g, "")
-    .replace(/\u3000/g, " ")
-    .trim();
-
-  if (options.lineBreakMode !== false) {
-    return normalized
-      .split(/\n+/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .flatMap((line) => splitLineByPunctuation(line));
+  if (article && state.sentences.length) {
+    setStatus("已選擇文章，可以開始");
+  } else {
+    setStatus("請先選擇文章");
   }
 
-  return splitLineByPunctuation(normalized.replace(/\n+/g, " "));
+  updateControls();
 }
 
-function detectLanguage(text) {
-  const chineseChars = (text.match(/[\u3400-\u9fff]/g) || []).length;
-  const englishChars = (text.match(/[A-Za-z]/g) || []).length;
-  return chineseChars >= englishChars ? "zh" : "en";
-}
-
-function getPracticeLanguage(text = "") {
-  const mode = elements.languageMode.value;
-  if (mode !== "auto") return mode;
-
-  const selected = getSelectedArticle();
-  const language = selected?.language?.toLowerCase?.().trim();
-  if (["zh", "chinese", "cantonese", "yue"].includes(language)) return "zh";
-  if (["en", "english"].includes(language)) return "en";
-
-  return detectLanguage(text);
-}
-
-function convertPunctuationForSpeech(text, lang) {
-  const zhMap = {
-    "，": "，逗號，",
-    "。": "，句號，",
-    "？": "，問號，",
-    "?": "，問號，",
-    "！": "，感嘆號，",
-    "!": "，感嘆號，",
-    "：": "，冒號，",
-    ":": "，冒號，",
-    "；": "，分號，",
-    ";": "，分號，",
-    "、": "，頓號，",
-    "「": "，開引號，",
-    "」": "，關引號，",
-    "『": "，開雙引號，",
-    "』": "，關雙引號，",
-    "（": "，開括號，",
-    "）": "，關括號，",
-    "(": "，開括號，",
-    ")": "，關括號，",
-    "“": "，開引號，",
-    "”": "，關引號，",
-    "\"": "，引號，"
-  };
-
-  const enMap = {
-    ",": ", comma, ",
-    ".": ", full stop, ",
-    "?": ", question mark, ",
-    "!": ", exclamation mark, ",
-    ":": ", colon, ",
-    ";": ", semicolon, ",
-    "\"": ", quotation mark, ",
-    "'": ", apostrophe, ",
-    "(": ", open bracket, ",
-    ")": ", close bracket, "
-  };
-
-  const map = lang === "en" ? enMap : zhMap;
-  return text
-    .split("")
-    .map((char) => map[char] || char)
-    .join("")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function refreshVoices() {
-  voices = window.speechSynthesis ? window.speechSynthesis.getVoices() : [];
-}
-
-function chooseVoice(lang) {
-  if (!voices.length) refreshVoices();
-
-  const lowerName = (voice) => voice.name.toLowerCase();
-  const lowerLang = (voice) => voice.lang.toLowerCase();
-  const isFemale = (voice) => /female|woman|samantha|susan|serena|karen|moira|tessa|zira|ava|siri/.test(lowerName(voice));
-
-  if (lang === "en") {
-    return (
-      voices.find((voice) => lowerLang(voice).startsWith("en-gb") && isFemale(voice)) ||
-      voices.find((voice) => lowerLang(voice).startsWith("en-gb")) ||
-      voices.find((voice) => lowerLang(voice).startsWith("en-hk") && isFemale(voice)) ||
-      voices.find((voice) => lowerLang(voice).startsWith("en-us") && isFemale(voice)) ||
-      voices.find((voice) => lowerLang(voice).startsWith("en"))
-    ) || null;
+function splitPassage(passage, lineBreakMode) {
+  if (lineBreakMode && passage.includes("\n")) {
+    return passage.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   }
 
-  return (
-    voices.find((voice) => lowerLang(voice).startsWith("yue")) ||
-    voices.find((voice) => lowerLang(voice).startsWith("zh-hk")) ||
-    voices.find((voice) => /cantonese|hong kong|yue|粵|粤|廣東|广东/.test(lowerName(voice))) ||
-    voices.find((voice) => lowerLang(voice).startsWith("zh-tw")) ||
-    voices.find((voice) => lowerLang(voice).startsWith("zh"))
-  ) || null;
+  const matches = passage.match(/[^。！？!?；;，,\.]+[。！？!?；;，,\.]?/g) || [];
+  return matches.map((sentence) => sentence.trim()).filter(Boolean);
 }
 
-function speakText(text, options = {}) {
-  const lang = options.lang || getPracticeLanguage(text);
-  const utterance = new SpeechSynthesisUtterance(text);
-  const chosenVoice = chooseVoice(lang);
-
-  utterance.lang = lang === "en" ? "en-GB" : "zh-HK";
-  utterance.rate = options.rate || 0.62;
-  utterance.pitch = 1;
-
-  if (chosenVoice) {
-    utterance.voice = chosenVoice;
-    utterance.lang = chosenVoice.lang;
+function startPractice() {
+  if (!state.currentArticle || !state.sentences.length) {
+    return;
   }
 
-  return new Promise((resolve, reject) => {
-    utterance.onend = resolve;
-    utterance.onerror = (event) => reject(event.error || event);
+  stopSpeech(false);
+  state.currentIndex = 0;
+  state.isCompleted = false;
+  speakCurrentSentence();
+}
+
+function previousSentence() {
+  if (state.currentIndex <= 0) {
+    return;
+  }
+
+  stopSpeech(false);
+  state.currentIndex -= 1;
+  state.isCompleted = false;
+  speakCurrentSentence();
+}
+
+function nextSentence() {
+  if (!state.sentences.length) {
+    return;
+  }
+
+  if (state.currentIndex >= state.sentences.length - 1) {
+    markCompleted();
+    return;
+  }
+
+  stopSpeech(false);
+  state.currentIndex += 1;
+  speakCurrentSentence();
+}
+
+function repeatCurrentSentence() {
+  if (!state.currentArticle || !state.sentences.length) {
+    return;
+  }
+
+  stopSpeech(false);
+  speakCurrentSentence();
+}
+
+async function repeatWholeArticle() {
+  if (!state.isCompleted || !state.sentences.length) {
+    return;
+  }
+
+  stopSpeech(false);
+  state.isRepeatingAll = true;
+  setStatus("正在重讀全文...");
+  updateControls();
+
+  for (let i = 0; i < state.sentences.length; i += 1) {
+    if (!state.isRepeatingAll) {
+      break;
+    }
+    state.currentIndex = i;
+    updateProgress();
+    await speakSentence(state.sentences[i], state.currentArticle.language, false);
+    await wait(650);
+  }
+
+  state.isRepeatingAll = false;
+  state.isSpeaking = false;
+  setStatus("全文重讀完成");
+  updateControls();
+}
+
+function speakCurrentSentence() {
+  const sentence = state.sentences[state.currentIndex];
+
+  if (!sentence) {
+    return;
+  }
+
+  state.isSpeaking = true;
+  setStatus("朗讀中...");
+  updateControls();
+  updateProgress();
+
+  speakSentence(sentence, state.currentArticle.language, true);
+}
+
+function speakSentence(sentence, language, shouldMarkComplete) {
+  return new Promise((resolve) => {
+    if (!("speechSynthesis" in window)) {
+      setStatus("此瀏覽器不支援朗讀功能");
+      resolve();
+      return;
+    }
+
+    const token = state.speechToken + 1;
+    state.speechToken = token;
+
+    const utterance = new SpeechSynthesisUtterance(formatTextForSpeech(sentence, language));
+    utterance.lang = language === "zh" ? "zh-HK" : "en-GB";
+    utterance.rate = language === "zh" ? 0.82 : 0.84;
+    utterance.pitch = 1;
+
+    const voice = chooseVoice(language);
+    if (voice) {
+      utterance.voice = voice;
+      utterance.lang = voice.lang || utterance.lang;
+    }
+
+    utterance.onend = () => {
+      if (token !== state.speechToken) {
+        resolve();
+        return;
+      }
+
+      state.isSpeaking = false;
+
+      if (shouldMarkComplete && state.currentIndex === state.sentences.length - 1) {
+        markCompleted();
+      } else if (!state.isRepeatingAll) {
+        setStatus("已讀完本句");
+        updateControls();
+      }
+
+      updateVoiceStatus();
+      resolve();
+    };
+
+    utterance.onerror = () => {
+      if (token === state.speechToken) {
+        state.isSpeaking = false;
+        setStatus("朗讀失敗，請再試一次");
+        updateControls();
+      }
+      resolve();
+    };
+
+    window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   });
 }
 
-function clearTimer() {
-  if (activeTimer) {
-    clearTimeout(activeTimer);
-    activeTimer = null;
+function formatTextForSpeech(sentence, language) {
+  if (language === "zh") {
+    return sentence
+      .replace(/，/g, "，逗號")
+      .replace(/。/g, "。句號")
+      .replace(/！/g, "。感嘆號")
+      .replace(/？/g, "。問號")
+      .replace(/；/g, "。分號");
   }
 
-  if (activeDelayResolve) {
-    activeDelayResolve(false);
-    activeDelayResolve = null;
-  }
+  return sentence
+    .replace(/,/g, ", comma")
+    .replace(/\./g, ". full stop")
+    .replace(/!/g, "! exclamation mark")
+    .replace(/\?/g, "? question mark")
+    .replace(/;/g, "; semicolon");
 }
 
-function stopSpeech() {
-  playbackToken += 1;
-  clearTimer();
-  if (window.speechSynthesis) {
+function stopSpeech(showStoppedStatus = true) {
+  state.speechToken += 1;
+  state.isSpeaking = false;
+  state.isRepeatingAll = false;
+
+  if ("speechSynthesis" in window) {
     window.speechSynthesis.cancel();
   }
-  isSpeaking = false;
-  elements.repeatText.textContent = "已停止";
-  setButtonStates();
-}
 
-function waitWithCancel(ms, token) {
-  return new Promise((resolve) => {
-    activeDelayResolve = resolve;
-    activeTimer = setTimeout(() => {
-      activeTimer = null;
-      activeDelayResolve = null;
-      resolve(token === playbackToken);
-    }, ms);
-  });
-}
-
-function updatePracticeDisplay() {
-  const total = segments.length;
-  const current = total ? currentIndex + 1 : 0;
-  const percent = total ? (current / total) * 100 : 0;
-
-  elements.progressText.textContent = `第 ${current} 段 / 共 ${total} 段`;
-  elements.progressBar.style.width = `${percent}%`;
-  setButtonStates();
-}
-
-function setButtonStates() {
-  const hasArticles = articles.length > 0;
-  const hasSegments = segments.length > 0;
-  const startText = !hasArticles
-    ? "正在讀取文章..."
-    : isSpeaking
-      ? "朗讀中..."
-      : practiceCompleted
-        ? "重新開始默書"
-        : "開始默書";
-
-  elements.startBtn.textContent = startText;
-  elements.prevBtn.disabled = !hasSegments || currentIndex <= 0 || isSpeaking;
-  elements.replayBtn.disabled = !hasSegments || isSpeaking;
-  elements.nextBtn.disabled = !hasSegments || isSpeaking;
-  elements.readAllBtn.disabled = !hasSegments || !practiceCompleted || isSpeaking;
-  elements.startBtn.disabled = !hasArticles || isSpeaking;
-}
-
-function resetPractice() {
-  stopSpeech();
-  segments = [];
-  currentIndex = 0;
-  practiceCompleted = false;
-  elements.completeMessage.hidden = true;
-  elements.repeatText.textContent = "等待開始";
-  updatePracticeDisplay();
-}
-
-function preparePractice() {
-  const selected = getSelectedArticle();
-  const text = selected?.text?.trim();
-  if (!text) {
-    elements.statusText.textContent = "未有可用文章。請檢查 Google Sheet。";
-    return false;
+  if (showStoppedStatus) {
+    setStatus("已停止朗讀");
   }
 
-  segments = splitIntoSegments(text, {
-    lineBreakMode: selected?.lineBreakMode !== false
-  });
-  currentIndex = 0;
-  practiceCompleted = false;
-  elements.completeMessage.hidden = true;
-  elements.repeatText.textContent = "準備播放";
-  updatePracticeDisplay();
-  elements.statusText.textContent = `已準備好：共 ${segments.length} 段。文章內容會保持隱藏。`;
-  return true;
+  updateControls();
 }
 
-async function playCurrentSentenceThreeTimes() {
-  if (!segments.length) return;
-
-  stopSpeech();
-  const token = playbackToken;
-  isSpeaking = true;
-  setButtonStates();
-  elements.completeMessage.hidden = true;
-
-  const sentence = segments[currentIndex];
-  const lang = getPracticeLanguage(sentence);
-  const speechText = convertPunctuationForSpeech(sentence, lang);
-
-  try {
-    for (let repeat = 1; repeat <= 3; repeat += 1) {
-      elements.repeatText.textContent = `第 ${repeat} 次朗讀中`;
-      await speakText(speechText, { lang });
-      if (token !== playbackToken) return;
-
-      if (repeat < 3) {
-        elements.repeatText.textContent = "停 3 秒";
-        const shouldContinue = await waitWithCancel(3000, token);
-        if (!shouldContinue || token !== playbackToken) return;
-      }
-    }
-
-    elements.repeatText.textContent = "請按「下一句」";
-    elements.statusText.textContent = "這一段已讀三次。";
-  } catch (error) {
-    if (token === playbackToken) {
-      elements.statusText.textContent = "朗讀被停止，或瀏覽器暫時未能播放聲音。";
-    }
-  } finally {
-    if (token === playbackToken) {
-      isSpeaking = false;
-      setButtonStates();
-    }
-  }
+function markCompleted() {
+  state.isSpeaking = false;
+  state.isCompleted = true;
+  state.isRepeatingAll = false;
+  setStatus("完成整篇文章，可以重讀全文");
+  updateControls();
+  updateProgress();
 }
 
-async function replayCurrentSentenceOnce() {
-  if (!segments.length) return;
+function updateControls() {
+  const hasArticle = Boolean(state.currentArticle && state.sentences.length);
 
-  stopSpeech();
-  const token = playbackToken;
-  isSpeaking = true;
-  setButtonStates();
+  elements.startBtn.disabled = !hasArticle;
+  elements.startBtn.textContent = state.isSpeaking ? "朗讀中" : (state.isCompleted ? "重新開始默書" : "開始默書");
+  elements.prevBtn.disabled = !hasArticle || state.currentIndex <= 0 || state.isRepeatingAll;
+  elements.nextBtn.disabled = !hasArticle || state.isRepeatingAll || state.currentIndex >= state.sentences.length - 1;
+  elements.repeatBtn.disabled = !hasArticle || state.isRepeatingAll;
+  elements.repeatAllBtn.disabled = !hasArticle || !state.isCompleted || state.isRepeatingAll;
+  elements.stopBtn.disabled = !state.isSpeaking && !state.isRepeatingAll;
 
-  const sentence = segments[currentIndex];
-  const lang = getPracticeLanguage(sentence);
-  const speechText = convertPunctuationForSpeech(sentence, lang);
-
-  try {
-    elements.repeatText.textContent = "重讀一次中";
-    await speakText(speechText, { lang });
-    if (token !== playbackToken) return;
-    elements.repeatText.textContent = "重讀完成";
-  } catch (error) {
-    if (token === playbackToken) {
-      elements.statusText.textContent = "朗讀被停止，或瀏覽器暫時未能播放聲音。";
-    }
-  } finally {
-    if (token === playbackToken) {
-      isSpeaking = false;
-      setButtonStates();
-    }
-  }
+  updateProgress();
 }
 
-async function readWholeArticleOnce() {
-  if (!segments.length && !preparePractice()) return;
-
-  stopSpeech();
-  const token = playbackToken;
-  isSpeaking = true;
-  setButtonStates();
-  elements.completeMessage.hidden = true;
-  elements.statusText.textContent = "正在重讀全文。";
-
-  try {
-    for (let index = 0; index < segments.length; index += 1) {
-      currentIndex = index;
-      updatePracticeDisplay();
-
-      const sentence = segments[index];
-      const lang = getPracticeLanguage(sentence);
-      const speechText = convertPunctuationForSpeech(sentence, lang);
-      elements.repeatText.textContent = "全文朗讀中";
-      await speakText(speechText, { lang, rate: 0.6 });
-      if (token !== playbackToken) return;
-    }
-
-    elements.repeatText.textContent = "全文朗讀完成";
-    elements.statusText.textContent = "全文已讀完一次。";
-  } catch (error) {
-    if (token === playbackToken) {
-      elements.statusText.textContent = "全文朗讀已停止。";
-    }
-  } finally {
-    if (token === playbackToken) {
-      isSpeaking = false;
-      setButtonStates();
-    }
-  }
-}
-
-function goToNextSentence() {
-  if (!segments.length && !preparePractice()) return;
-
-  if (currentIndex >= segments.length - 1) {
-    practiceCompleted = true;
-    elements.completeMessage.hidden = false;
-    elements.repeatText.textContent = "已完成";
-    elements.statusText.textContent = "太好了！整篇默書已完成。";
-    updatePracticeDisplay();
+function updateProgress() {
+  if (!state.currentArticle || !state.sentences.length) {
+    elements.progressText.textContent = "尚未開始";
     return;
   }
 
-  currentIndex += 1;
-  updatePracticeDisplay();
-  playCurrentSentenceThreeTimes();
+  elements.progressText.textContent = `第 ${state.currentIndex + 1} / ${state.sentences.length} 句`;
 }
 
-function goToPreviousSentence() {
-  if (!segments.length || currentIndex <= 0) return;
-  currentIndex -= 1;
-  updatePracticeDisplay();
-  playCurrentSentenceThreeTimes();
+function setStatus(message) {
+  elements.statusText.textContent = message;
 }
 
-function startPractice() {
-  if (!preparePractice()) return;
-  playCurrentSentenceThreeTimes();
-}
-
-function init() {
+function loadVoices() {
   if (!("speechSynthesis" in window)) {
-    elements.statusText.textContent = "你的瀏覽器暫時不支援朗讀功能。請試 Chrome、Edge 或 Safari。";
+    elements.voiceStatus.textContent = "此瀏覽器不支援朗讀功能";
+    return;
   }
 
-  refreshVoices();
-  if (window.speechSynthesis) {
-    window.speechSynthesis.onvoiceschanged = refreshVoices;
-  }
+  state.voices = window.speechSynthesis.getVoices() || [];
+  populateVoiceSelect(elements.zhVoiceSelect, STORAGE_KEYS.zhVoice);
+  populateVoiceSelect(elements.enVoiceSelect, STORAGE_KEYS.enVoice);
+  updateVoiceStatus();
+}
 
-  elements.articleSelect.addEventListener("change", loadSelectedArticle);
-  elements.startBtn.addEventListener("click", startPractice);
-  elements.prevBtn.addEventListener("click", goToPreviousSentence);
-  elements.replayBtn.addEventListener("click", replayCurrentSentenceOnce);
-  elements.nextBtn.addEventListener("click", goToNextSentence);
-  elements.readAllBtn.addEventListener("click", readWholeArticleOnce);
-  elements.stopBtn.addEventListener("click", stopSpeech);
-  elements.languageMode.addEventListener("change", () => {
-    elements.statusText.textContent = "朗讀語言設定已更新。";
+function populateVoiceSelect(select, storageKey) {
+  const savedValue = localStorage.getItem(storageKey) || "auto";
+  select.innerHTML = '<option value="auto">自動選擇（女聲優先）</option>';
+
+  state.voices.forEach((voice) => {
+    const option = document.createElement("option");
+    option.value = voice.voiceURI;
+    option.textContent = `${voice.name} (${voice.lang})`;
+    select.appendChild(option);
   });
 
-  resetPractice();
-  loadArticleLibrary();
+  select.value = state.voices.some((voice) => voice.voiceURI === savedValue) ? savedValue : "auto";
 }
 
-init();
+function chooseVoice(language) {
+  const select = language === "zh" ? elements.zhVoiceSelect : elements.enVoiceSelect;
+  const selectedUri = select.value;
+
+  if (selectedUri && selectedUri !== "auto") {
+    return state.voices.find((voice) => voice.voiceURI === selectedUri) || null;
+  }
+
+  return getBestVoice(language);
+}
+
+function getBestVoice(language) {
+  if (!state.voices.length) {
+    return null;
+  }
+
+  const ranked = state.voices.map((voice) => ({
+    voice,
+    score: scoreVoice(voice, language)
+  })).sort((a, b) => b.score - a.score);
+
+  return ranked[0]?.score > -100 ? ranked[0].voice : null;
+}
+
+function scoreVoice(voice, language) {
+  const name = `${voice.name} ${voice.voiceURI}`.toLowerCase();
+  const lang = String(voice.lang || "").toLowerCase();
+  let score = 0;
+
+  const femaleNames = ["female", "samantha", "victoria", "serena", "karen", "moira", "fiona", "tessa", "susan", "zira", "aria", "jenny", "sonia", "libby", "maisie", "ava", "allison", "nicky", "siri"];
+  const maleNames = ["male", "daniel", "alex", "tom", "fred", "aaron", "oliver", "gordon", "arthur", "ralph"];
+
+  if (language === "en") {
+    if (lang === "en-gb") score += 80;
+    if (lang.startsWith("en")) score += 35;
+    if (!lang.startsWith("en")) score -= 80;
+  } else {
+    if (lang === "zh-hk" || lang.startsWith("yue")) score += 90;
+    if (lang.startsWith("zh")) score += 40;
+    if (!lang.startsWith("zh") && !lang.startsWith("yue")) score -= 80;
+  }
+
+  if (femaleNames.some((item) => name.includes(item))) score += 35;
+  if (maleNames.some((item) => name.includes(item))) score -= 45;
+  if (voice.localService) score += 5;
+
+  return score;
+}
+
+function updateVoiceStatus() {
+  const zhVoice = chooseVoice("zh");
+  const enVoice = chooseVoice("en");
+  const zhName = zhVoice ? `${zhVoice.name} (${zhVoice.lang})` : "未偵測到";
+  const enName = enVoice ? `${enVoice.name} (${enVoice.lang})` : "未偵測到";
+
+  elements.voiceStatus.textContent = `目前預設：中文 ${zhName}；英文 ${enName}`;
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
