@@ -1,4 +1,7 @@
 const GOOGLE_SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRfmlTFpkVroBCn-XVabMyXFPb-TDwvpqmHGH6hJc1NmN7t8CwtXpVeGnm2DfF36hzzYGDC0Wja0iAC/pub?output=csv";
+const SENTENCE_REPEAT_COUNT = 3;
+const CHINESE_SPEECH_RATE = 0.82;
+const ENGLISH_SPEECH_RATE = 0.67;
 
 const STORAGE_KEYS = {
   zhVoice: "dictationCoach.zhVoiceURI",
@@ -307,7 +310,7 @@ async function repeatWholeArticle() {
     }
     state.currentIndex = i;
     updateProgress();
-    await speakSentence(state.sentences[i], state.currentArticle.language, false);
+    await speakSentenceRepeated(state.sentences[i], state.currentArticle.language, false);
     await wait(650);
   }
 
@@ -325,27 +328,62 @@ function speakCurrentSentence() {
   }
 
   state.isSpeaking = true;
-  setStatus("朗讀中...");
+  setStatus(`朗讀中...（第 1 / ${SENTENCE_REPEAT_COUNT} 次）`);
   updateControls();
   updateProgress();
 
-  speakSentence(sentence, state.currentArticle.language, true);
+  speakSentenceRepeated(sentence, state.currentArticle.language, true);
 }
 
-function speakSentence(sentence, language, shouldMarkComplete) {
-  return new Promise((resolve) => {
-    if (!("speechSynthesis" in window)) {
-      setStatus("此瀏覽器不支援朗讀功能");
-      resolve();
+async function speakSentenceRepeated(sentence, language, shouldMarkComplete) {
+  if (!("speechSynthesis" in window)) {
+    setStatus("此瀏覽器不支援朗讀功能");
+    return;
+  }
+
+  const token = state.speechToken + 1;
+  state.speechToken = token;
+  state.isSpeaking = true;
+  updateControls();
+
+  for (let repeatIndex = 1; repeatIndex <= SENTENCE_REPEAT_COUNT; repeatIndex += 1) {
+    if (token !== state.speechToken) {
       return;
     }
 
-    const token = state.speechToken + 1;
-    state.speechToken = token;
+    setStatus(`朗讀中...（第 ${repeatIndex} / ${SENTENCE_REPEAT_COUNT} 次）`);
+    const success = await speakSentenceOnce(sentence, language, token);
 
+    if (!success || token !== state.speechToken) {
+      return;
+    }
+
+    if (repeatIndex < SENTENCE_REPEAT_COUNT) {
+      await wait(550);
+    }
+  }
+
+  if (token !== state.speechToken) {
+    return;
+  }
+
+  state.isSpeaking = false;
+
+  if (shouldMarkComplete && state.currentIndex === state.sentences.length - 1) {
+    markCompleted();
+  } else if (!state.isRepeatingAll) {
+    setStatus(`已讀完本句（共 ${SENTENCE_REPEAT_COUNT} 次）`);
+    updateControls();
+  }
+
+  updateVoiceStatus();
+}
+
+function speakSentenceOnce(sentence, language, token) {
+  return new Promise((resolve) => {
     const utterance = new SpeechSynthesisUtterance(formatTextForSpeech(sentence, language));
     utterance.lang = language === "zh" ? "zh-HK" : "en-GB";
-    utterance.rate = language === "zh" ? 0.82 : 0.84;
+    utterance.rate = language === "zh" ? CHINESE_SPEECH_RATE : ENGLISH_SPEECH_RATE;
     utterance.pitch = 1;
 
     const voice = chooseVoice(language);
@@ -356,21 +394,10 @@ function speakSentence(sentence, language, shouldMarkComplete) {
 
     utterance.onend = () => {
       if (token !== state.speechToken) {
-        resolve();
+        resolve(false);
         return;
       }
-
-      state.isSpeaking = false;
-
-      if (shouldMarkComplete && state.currentIndex === state.sentences.length - 1) {
-        markCompleted();
-      } else if (!state.isRepeatingAll) {
-        setStatus("已讀完本句");
-        updateControls();
-      }
-
-      updateVoiceStatus();
-      resolve();
+      resolve(true);
     };
 
     utterance.onerror = () => {
@@ -379,7 +406,7 @@ function speakSentence(sentence, language, shouldMarkComplete) {
         setStatus("朗讀失敗，請再試一次");
         updateControls();
       }
-      resolve();
+      resolve(false);
     };
 
     window.speechSynthesis.cancel();
